@@ -1,0 +1,24 @@
+{
+  "dependencies": [
+    {
+      "allowed_versions": [
+        "1.4.0",
+        "2.0.0"
+      ],
+      "name": "json-codec"
+    },
+    {
+      "allowed_versions": [
+        "2.0.0"
+      ],
+      "name": "shared-lib"
+    }
+  ],
+  "group": "com.example",
+  "license": "MIT",
+  "name": "http-client",
+  "packaging": "jar",
+  "sha256": "177badf5665a92496c814738024076185a21524861e3b2365e3da8cc2203c270",
+  "size_bytes": 398000,
+  "version": "3.0.0"
+}

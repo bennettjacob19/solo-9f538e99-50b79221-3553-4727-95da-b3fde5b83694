@@ -1,0 +1,24 @@
+{
+  "dependencies": [
+    {
+      "allowed_versions": [
+        "1.9.0"
+      ],
+      "name": "core"
+    },
+    {
+      "allowed_versions": [
+        "2.4.0",
+        "3.0.0"
+      ],
+      "name": "http-client"
+    }
+  ],
+  "group": "com.example",
+  "license": "Apache-2.0",
+  "name": "example-app",
+  "packaging": "jar",
+  "sha256": "3ba70465a47e6f56f6e687a4cccd70e236b911300f502b2030ed37f08c3f4ef5",
+  "size_bytes": 1810000,
+  "version": "1.9.0"
+}

@@ -1,0 +1,23 @@
+{
+  "dependencies": [
+    {
+      "allowed_versions": [
+        "2.0.0"
+      ],
+      "name": "json-codec"
+    },
+    {
+      "allowed_versions": [
+        "2.0.0"
+      ],
+      "name": "shared-lib"
+    }
+  ],
+  "group": "com.example",
+  "license": "Apache-2.0",
+  "name": "core",
+  "packaging": "jar",
+  "sha256": "651bb497dc5b38e1e34d4f91d7ded9654dcd414a7aabeff2e610b6bd7dd52de6",
+  "size_bytes": 655000,
+  "version": "2.1.0"
+}

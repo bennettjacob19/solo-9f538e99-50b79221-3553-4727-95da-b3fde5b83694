@@ -1,0 +1,253 @@
+{
+  "artifacts": [
+    {
+      "name": "core",
+      "versions": [
+        {
+          "dependencies": [
+            {
+              "allowed_versions": [
+                "1.4.0"
+              ],
+              "name": "json-codec"
+            },
+            {
+              "allowed_versions": [
+                "2.0.0"
+              ],
+              "name": "shared-lib"
+            }
+          ],
+          "sha256": "179ffda94924f2f1b5ad3d4a28d905a19c9937a8da78230949a650ff311f49b8",
+          "version": "2.0.0"
+        },
+        {
+          "dependencies": [
+            {
+              "allowed_versions": [
+                "1.4.0",
+                "2.0.0"
+              ],
+              "name": "json-codec"
+            },
+            {
+              "allowed_versions": [
+                "1.9.0",
+                "2.0.0"
+              ],
+              "name": "shared-lib"
+            }
+          ],
+          "sha256": "d639242512051d5693bb5f4b3703d62646f4231bc5d312726b5863fbe59ef24e",
+          "version": "1.9.0"
+        }
+      ]
+    },
+    {
+      "name": "example-app",
+      "versions": [
+        {
+          "dependencies": [
+            {
+              "allowed_versions": [
+                "2.0.0"
+              ],
+              "name": "core"
+            },
+            {
+              "allowed_versions": [
+                "3.1.0",
+                "3.0.0"
+              ],
+              "name": "http-client"
+            }
+          ],
+          "sha256": "9790f66606d3357dd8b41b8b6740b06bbb14c8c0da84fbad0a8acc39402f6af0",
+          "version": "2.0.0"
+        },
+        {
+          "dependencies": [
+            {
+              "allowed_versions": [
+                "1.9.0"
+              ],
+              "name": "core"
+            },
+            {
+              "allowed_versions": [
+                "2.4.0",
+                "3.0.0"
+              ],
+              "name": "http-client"
+            }
+          ],
+          "sha256": "3ba70465a47e6f56f6e687a4cccd70e236b911300f502b2030ed37f08c3f4ef5",
+          "version": "1.9.0"
+        },
+        {
+          "dependencies": [
+            {
+              "allowed_versions": [
+                "1.9.0"
+              ],
+              "name": "core"
+            },
+            {
+              "allowed_versions": [
+                "2.4.0"
+              ],
+              "name": "http-client"
+            }
+          ],
+          "sha256": "3b1c3f3cdf1b7f1dc84acd3a1f71aa7acef07af0d4c01ddddbe589ec3a39b516",
+          "version": "1.8.0"
+        }
+      ]
+    },
+    {
+      "name": "http-client",
+      "versions": [
+        {
+          "dependencies": [
+            {
+              "allowed_versions": [
+                "2.0.0"
+              ],
+              "name": "json-codec"
+            }
+          ],
+          "sha256": "572ef20bf2ba2f5e235b73a5c16f24b5e04e5c0705f80e3a67200db1710331ea",
+          "version": "3.1.0"
+        },
+        {
+          "dependencies": [
+            {
+              "allowed_versions": [
+                "1.4.0",
+                "2.0.0"
+              ],
+              "name": "json-codec"
+            },
+            {
+              "allowed_versions": [
+                "2.0.0"
+              ],
+              "name": "shared-lib"
+            }
+          ],
+          "sha256": "177badf5665a92496c814738024076185a21524861e3b2365e3da8cc2203c270",
+          "version": "3.0.0"
+        },
+        {
+          "dependencies": [
+            {
+              "allowed_versions": [
+                "1.4.0"
+              ],
+              "name": "json-codec"
+            }
+          ],
+          "sha256": "fcaf049546592becc67b84abe296b23f7d5a47ce76e90cf429f7b40df298aed0",
+          "version": "2.4.0"
+        }
+      ]
+    },
+    {
+      "name": "json-codec",
+      "versions": [
+        {
+          "dependencies": [],
+          "sha256": "5f0a8241839dcd781285de5b1ab4c836d7abc801328209f30a0e9fdf99b17a02",
+          "version": "2.0.0"
+        },
+        {
+          "dependencies": [],
+          "sha256": "1ca77e40e91bcae5100c8e3c4dc13a2b4887a5ff137239756177bf2153c3ebdf",
+          "version": "1.4.0"
+        }
+      ]
+    },
+    {
+      "name": "legacy-config",
+      "versions": [
+        {
+          "dependencies": [
+            {
+              "allowed_versions": [
+                "1.0.0"
+              ],
+              "name": "plugin-a"
+            }
+          ],
+          "sha256": "a2338f37f7a5b6df536f67e03974295b8f7e71ea148df3fc7bbc159fef88501c",
+          "version": "0.9.0"
+        }
+      ]
+    },
+    {
+      "name": "plugin-a",
+      "versions": [
+        {
+          "dependencies": [
+            {
+              "allowed_versions": [
+                "0.9.0"
+              ],
+              "name": "legacy-config"
+            }
+          ],
+          "sha256": "98299a87a53032dc693fc42220e3c1495ea20426e200dd411e00dc532316978a",
+          "version": "1.0.0"
+        }
+      ]
+    },
+    {
+      "name": "shared-lib",
+      "versions": [
+        {
+          "dependencies": [],
+          "sha256": "9e877bcbf1fbce123767fba9e604f914d7384a936f63d06538b23b292f7b704a",
+          "version": "2.0.0"
+        },
+        {
+          "dependencies": [],
+          "sha256": "2c05a1389bfe54b753a7f21fcd788ec24859da706d391548fcf5762fb8d8ce05",
+          "version": "1.9.0"
+        }
+      ]
+    },
+    {
+      "name": "web-console",
+      "versions": [
+        {
+          "dependencies": [
+            {
+              "allowed_versions": [
+                "3.0.0",
+                "3.1.0"
+              ],
+              "name": "http-client"
+            }
+          ],
+          "sha256": "89e00617ad89f4184d3dbf7c0b28700ab0193a9c7062038aa67df58044fb0095",
+          "version": "1.2.0"
+        },
+        {
+          "dependencies": [
+            {
+              "allowed_versions": [
+                "2.4.0",
+                "3.0.0"
+              ],
+              "name": "http-client"
+            }
+          ],
+          "sha256": "c180ce85a76bd25e0cc0bf8c2ec57250c98d57a226a760f270a1353c3093ab50",
+          "version": "1.1.0"
+        }
+      ]
+    }
+  ],
+  "catalog_id": "lock-demo",
+  "schema": "artifact-catalog/v1"
+}

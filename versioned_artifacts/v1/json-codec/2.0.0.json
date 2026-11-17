@@ -1,0 +1,10 @@
+{
+  "dependencies": [],
+  "group": "com.example",
+  "license": "MIT",
+  "name": "json-codec",
+  "packaging": "jar",
+  "sha256": "5f0a8241839dcd781285de5b1ab4c836d7abc801328209f30a0e9fdf99b17a02",
+  "size_bytes": 220000,
+  "version": "2.0.0"
+}

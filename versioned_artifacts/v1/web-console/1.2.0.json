@@ -1,0 +1,18 @@
+{
+  "dependencies": [
+    {
+      "allowed_versions": [
+        "3.0.0",
+        "3.1.0"
+      ],
+      "name": "http-client"
+    }
+  ],
+  "group": "com.example",
+  "license": "Apache-2.0",
+  "name": "web-console",
+  "packaging": "zip",
+  "sha256": "89e00617ad89f4184d3dbf7c0b28700ab0193a9c7062038aa67df58044fb0095",
+  "size_bytes": 920000,
+  "version": "1.2.0"
+}

@@ -46,6 +46,10 @@ from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
+import locker
+from locker import CatalogError, CatalogStore
+from seed_data import INITIAL_CATALOG
+
 BASE_DIR = Path(__file__).resolve().parent
 DB_PATH = Path(os.environ.get("GATEWAY_DB", BASE_DIR / "data" / "breaker.db"))
 UPSTREAM_URL = os.environ.get("UPSTREAM_URL", "http://upstream:9000").rstrip("/")
@@ -139,6 +143,11 @@ def write_tx():
         conn.execute("COMMIT")
     finally:
         conn.close()
+
+
+# Versioned catalog store.  It shares the breaker SQLite database, so
+# revisions are visible to both workers and survive restarts.
+CATALOG_STORE = CatalogStore(connect, write_tx)
 
 
 def log_event(conn: sqlite3.Connection, artifact: str, kind: str, detail: str = "") -> None:
@@ -448,6 +457,106 @@ async def call_upstream(artifact: str) -> Outcome:
     return Outcome("success", f"{resp.status_code}", status=resp.status_code, payload=payload)
 
 
+async def call_upstream_versioned(artifact: str, version: str) -> Outcome:
+    """One versioned metadata GET through the same timeout/breaker path."""
+    url = (
+        f"{UPSTREAM_URL}/artifacts/{quote(artifact, safe='')}"
+        f"?version={quote(version, safe='')}"
+    )
+    try:
+        resp = await asyncio.wait_for(_get(url), timeout=REQUEST_TIMEOUT)
+    except (asyncio.TimeoutError, httpx.TimeoutException, httpx.ConnectError,
+            httpx.NetworkError, httpx.RemoteProtocolError, httpx.HTTPError) as exc:
+        return Outcome("failure", f"{type(exc).__name__}: {exc}"[:300])
+    except asyncio.CancelledError:
+        raise
+    except Exception as exc:
+        return Outcome("failure", f"{type(exc).__name__}: {exc}"[:300])
+
+    if resp.status_code >= 500:
+        return Outcome(
+            "failure",
+            f"upstream {resp.status_code}: {resp.text[:200]}",
+            status=resp.status_code,
+        )
+    try:
+        payload = resp.json()
+    except ValueError:
+        payload = resp.text[:2000]
+    return Outcome("success", f"{resp.status_code}", status=resp.status_code, payload=payload)
+
+
+async def breaker_guarded_lookup(artifact: str, version: Optional[str] = None) -> dict[str, Any]:
+    """Run one metadata lookup through the shared circuit breaker.
+
+    Returns a normalised result used by both the legacy ``/api/meta`` view
+    and the dependency locker's injected fetcher.  Breaker-open rejections
+    and upstream failures are surfaced as ``ok=False``; a 404 from a healthy
+    upstream is also ``ok=False`` (the artifact/version simply does not
+    exist), but *not* a breaker failure.
+    """
+    try:
+        adm = await asyncio.to_thread(admit, artifact)
+    except sqlite3.Error as exc:
+        return {"ok": False, "reason": "breaker_store_unavailable",
+                "detail": str(exc)[:300], "status": 503, "admission": None}
+
+    if not adm.allowed:
+        return {
+            "ok": False,
+            "reason": "circuit_open",
+            "detail": f"breaker {adm.state}; retry_after={adm.retry_after:.2f}s",
+            "status": 503,
+            "retry_after": round(adm.retry_after, 3),
+            "breaker_state": adm.state,
+            "admission": {"role": adm.role, "epoch": adm.epoch},
+        }
+
+    started = time.time()
+    try:
+        if version is None:
+            outcome = await call_upstream(artifact)
+        else:
+            outcome = await call_upstream_versioned(artifact, version)
+    except asyncio.CancelledError:
+        with contextlib.suppress(Exception):
+            await asyncio.shield(
+                asyncio.to_thread(
+                    _finish, artifact, adm, Outcome("failure", "cancelled"), None
+                )
+            )
+        raise
+    elapsed = time.time() - started
+    effect = await asyncio.to_thread(_finish, artifact, adm, outcome, adm.role)
+
+    common = {
+        "role": adm.role,
+        "elapsed_ms": round(elapsed * 1000, 1),
+        "breaker_effect": effect["effect"],
+        "breaker_state": effect["state"],
+        "pid": os.getpid(),
+    }
+    if outcome.kind != "success":
+        return {"ok": False,
+                "reason": "upstream_failure",
+                "detail": outcome.detail,
+                "status": outcome.status or 502,
+                **common}
+
+    status = outcome.status or 200
+    payload = outcome.payload if isinstance(outcome.payload, dict) else {}
+    if status >= 400:
+        # A healthy upstream answered (4xx) -- the breaker was reset, but the
+        # requested artifact/version has no metadata.
+        return {"ok": False,
+                "reason": "not_found" if status == 404 else "upstream_client_error",
+                "detail": f"upstream {status}: {json.dumps(payload)[:200]}",
+                "status": status,
+                **common}
+    metadata = payload.get("metadata", payload)
+    return {"ok": True, "status": status, "metadata": metadata, **common}
+
+
 # ---------------------------------------------------------------------------
 # Auxiliary shared counters
 # ---------------------------------------------------------------------------
@@ -483,6 +592,8 @@ def get_gateway_hits() -> dict[str, Any]:
 async def lifespan(_: FastAPI):
     init_db()
     clean_stale_probes()
+    CATALOG_STORE.init_schema()
+    CATALOG_STORE.seed_if_empty(INITIAL_CATALOG)
     try:
         yield
     finally:
@@ -677,12 +788,162 @@ async def set_upstream_script(request: Request) -> JSONResponse:
     return await _proxy("POST", "/control/script", payload)
 
 
+# -- dependency locker ------------------------------------------------------
+
+
+@app.get("/api/lock/catalog")
+async def lock_catalog(revision: Optional[int] = None) -> JSONResponse:
+    """Return one catalog revision (default: the current one)."""
+    try:
+        snap = (
+            CATALOG_STORE.get_revision(revision)
+            if revision is not None
+            else CATALOG_STORE.current_revision()
+        )
+    except sqlite3.Error as exc:
+        return JSONResponse(status_code=503,
+                            content={"error": "catalog_store_unavailable", "detail": str(exc)[:200]})
+    if snap is None:
+        return JSONResponse(status_code=404,
+                            content={"error": "revision_not_found", "revision": revision})
+    return JSONResponse(content=_catalog_payload(snap))
+
+
+@app.get("/api/lock/revisions")
+async def lock_revisions() -> JSONResponse:
+    """List every retained catalog revision (old revisions stay readable)."""
+    try:
+        revisions = CATALOG_STORE.list_revisions()
+    except sqlite3.Error as exc:
+        return JSONResponse(status_code=503,
+                            content={"error": "catalog_store_unavailable", "detail": str(exc)[:200]})
+    current = revisions[-1]["id"] if revisions else None
+    return JSONResponse(content={"revisions": revisions, "current_revision": current})
+
+
+@app.post("/api/lock/catalog")
+async def lock_replace_catalog(request: Request) -> JSONResponse:
+    """Atomically replace the whole catalog.
+
+    The document is fully validated before any write and the insert is one
+    transaction, so an invalid document or a failed write leaves the active
+    revision untouched.  A successful replacement always appends a new
+    revision; every old revision is retained.
+    """
+    try:
+        doc = await request.json()
+    except ValueError:
+        return JSONResponse(status_code=400, content={"error": "invalid_json",
+                                                      "detail": "request body must be a JSON document"})
+    try:
+        revision_id = await asyncio.to_thread(CATALOG_STORE.replace, doc)
+    except CatalogError as exc:
+        current = CATALOG_STORE.current_revision()
+        return JSONResponse(
+            status_code=400,
+            content={
+                "error": "invalid_catalog",
+                "detail": str(exc),
+                "active_revision_unchanged": current["id"] if current else None,
+            },
+        )
+    except sqlite3.Error as exc:
+        return JSONResponse(status_code=503,
+                            content={"error": "catalog_store_unavailable", "detail": str(exc)[:200]})
+    snap = CATALOG_STORE.get_revision(revision_id)
+    return JSONResponse(status_code=201, content=_catalog_payload(snap))
+
+
+@app.get("/api/lock/sample-catalog/{sample}")
+async def lock_sample_catalog(sample: str) -> JSONResponse:
+    """Return a bundled sample catalog document for the replace-directory demo.
+
+    The document is only returned for editing in the browser; it is not stored
+    until the user explicitly POSTs it to ``/api/lock/catalog``.
+    """
+    samples = {"v2": BASE_DIR / "seed_catalogs" / "lock-demo-v2.json"}
+    path = samples.get(sample)
+    if path is None or not path.is_file():
+        return JSONResponse(status_code=404, content={"error": "sample_not_found",
+                                                      "sample": sample})
+    try:
+        doc = json.loads(path.read_text())
+    except (OSError, ValueError) as exc:
+        return JSONResponse(status_code=500, content={"error": "sample_unreadable",
+                                                      "detail": str(exc)[:200]})
+    return JSONResponse(content={"catalog": doc, "sample": sample})
+
+
+def _catalog_payload(snap: dict[str, Any]) -> dict[str, Any]:
+    doc = snap["document"]
+    return {
+        "revision": snap["id"],
+        "created_at": round(snap["created_at"], 3),
+        "doc_digest": snap["doc_digest"],
+        "catalog_id": doc.get("catalog_id"),
+        "schema": doc.get("schema"),
+        "artifact_count": len(doc.get("artifacts", [])),
+        "version_count": sum(len(a.get("versions", [])) for a in doc.get("artifacts", [])),
+        "catalog": doc,
+    }
+
+
+@app.post("/api/lock/solve")
+async def lock_solve(request: Request) -> JSONResponse:
+    """Pin the current catalog revision, solve, then verify metadata.
+
+    The revision is captured before the search starts; a catalog replacement
+    arriving while the solve is in flight cannot mix new versions into the
+    running solve and only affects later solves.  ``query_failed`` (breaker
+    open / upstream error / 404 / digest mismatch) is distinct from
+    ``unsat`` (no compatible combination exists in the pinned catalog).
+    """
+    try:
+        payload = await request.json()
+    except ValueError:
+        return JSONResponse(status_code=400, content={"error": "invalid_json"})
+    root = payload.get("root")
+    allowed = payload.get("allowed_versions")
+    try:
+        root, allowed = locker.validate_solve_request(root, allowed)
+    except CatalogError as exc:
+        return JSONResponse(status_code=400, content={"error": "invalid_request", "detail": str(exc)})
+
+    try:
+        snapshot = CATALOG_STORE.current_revision()
+    except sqlite3.Error as exc:
+        return JSONResponse(status_code=503,
+                            content={"error": "catalog_store_unavailable", "detail": str(exc)[:200]})
+    if snapshot is None:
+        return JSONResponse(status_code=409,
+                            content={"error": "catalog_unavailable",
+                                     "detail": "no catalog revision has been installed yet"})
+
+    async def fetcher(name: str, version: str) -> dict[str, Any]:
+        return await breaker_guarded_lookup(name, version)
+
+    try:
+        result = await locker.solve(snapshot, root, allowed, fetcher)
+    except CatalogError as exc:
+        return JSONResponse(status_code=400, content={"error": "invalid_request", "detail": str(exc)})
+
+    # All three solver statuses (sat / unsat / query_failed) are successful
+    # HTTP responses: the request itself worked, the status field carries the
+    # distinction.  Transport-level problems are answered above.
+    return JSONResponse(status_code=200, content=result)
+
+
 # -- web UI ----------------------------------------------------------------
 
 
 @app.get("/")
 async def index() -> FileResponse:
     return FileResponse(BASE_DIR / "static" / "index.html")
+
+
+@app.get("/lock")
+async def lock_page() -> FileResponse:
+    return FileResponse(BASE_DIR / "static" / "lock.html")
 
 
 app.mount("/static", StaticFiles(directory=str(BASE_DIR / "static")), name="static")

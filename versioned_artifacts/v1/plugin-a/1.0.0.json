@@ -1,0 +1,17 @@
+{
+  "dependencies": [
+    {
+      "allowed_versions": [
+        "0.9.0"
+      ],
+      "name": "legacy-config"
+    }
+  ],
+  "group": "com.example",
+  "license": "MIT",
+  "name": "plugin-a",
+  "packaging": "jar",
+  "sha256": "98299a87a53032dc693fc42220e3c1495ea20426e200dd411e00dc532316978a",
+  "size_bytes": 96000,
+  "version": "1.0.0"
+}

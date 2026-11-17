@@ -13,6 +13,7 @@ services:
       - "9000"
     environment:
       ARTIFACT_DIR: /srv/artifacts
+      ARTIFACT_TREE_ROOT: /srv/versioned_artifacts/v1
     expose:
       - "9000"
     healthcheck:

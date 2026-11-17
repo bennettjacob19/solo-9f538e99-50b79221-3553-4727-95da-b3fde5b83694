@@ -1,10 +1,19 @@
 """Example upstream: a tiny local artifact-directory service.
 
-Serves metadata for files in ``ARTIFACT_DIR`` (one ``<name>.json`` file per
-artifact) and exposes a control plane used by the demo web page to switch
-between healthy, slow and erroring behaviour.  It also counts every real
-``/artifacts/*`` request, which is the ground truth for "did the gateway
-actually touch the upstream?".
+Serves metadata from ``ARTIFACT_DIR`` and exposes a control plane used by the
+demo web page to switch between healthy, slow and erroring behaviour.  It
+also counts every real ``/artifacts/*`` request, which is the ground truth
+for "did the gateway actually touch the upstream?".
+
+Two lookup flavours share the same endpoint, circuit breaker and counters:
+
+* legacy single-artifact files (``<name>.json``) as used by the original
+  metadata gateway -- requested without a ``version`` query parameter;
+* per-version metadata trees (``<name>/<version>.json``) used by the
+  dependency locker -- requested with ``?version=<v>``.  The tree root can be
+  switched with ``ARTIFACT_TREE_ROOT`` (the Compose stack points the locker
+  demo at the revision-1 tree; a different mount demonstrates a directory
+  replacement changing the served digests).
 """
 
 from __future__ import annotations
@@ -12,15 +21,20 @@ from __future__ import annotations
 import asyncio
 import json
 import os
+import re
 import time
 from pathlib import Path
-from typing import Any
+from typing import Any, Optional
 
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 
 BASE_DIR = Path(__file__).resolve().parent
 ARTIFACT_DIR = Path(os.environ.get("ARTIFACT_DIR", BASE_DIR / "artifacts"))
+ARTIFACT_TREE_ROOT = Path(
+    os.environ.get("ARTIFACT_TREE_ROOT", BASE_DIR / "versioned_artifacts" / "v1")
+)
+_SAFE_SEGMENT = re.compile(r"^[A-Za-z0-9._-]+$")
 
 app = FastAPI(title="Example artifact directory service")
 
@@ -42,7 +56,7 @@ def _bump(mode: str, artifact: str) -> None:
 
 
 def _resolve(artifact: str) -> Path | None:
-    """Map an artifact name to a metadata file inside ARTIFACT_DIR only."""
+    """Map an artifact name to a legacy metadata file inside ARTIFACT_DIR only."""
     candidate = (ARTIFACT_DIR / artifact).resolve()
     try:
         candidate.relative_to(ARTIFACT_DIR.resolve())
@@ -53,8 +67,22 @@ def _resolve(artifact: str) -> Path | None:
     return candidate if candidate.is_file() else None
 
 
+def _resolve_versioned(artifact: str, version: str) -> Path | None:
+    """Map ``(artifact, version)`` to a file inside the versioned tree only."""
+    if not _SAFE_SEGMENT.match(artifact) or not _SAFE_SEGMENT.match(version):
+        return None
+    root = ARTIFACT_TREE_ROOT.resolve()
+    candidate = (root / artifact / f"{version}.json").resolve()
+    try:
+        candidate.relative_to(root)
+    except ValueError:
+        return None
+    return candidate if candidate.is_file() else None
+
+
 @app.get("/artifacts/{artifact:path}")
-async def artifact_metadata(artifact: str, request: Request) -> JSONResponse:
+async def artifact_metadata(artifact: str, request: Request,
+                            version: Optional[str] = None) -> JSONResponse:
     mode = _mode["mode"]
     scripted = _script.pop(0) if _script else None
     _bump(mode, artifact)
@@ -79,12 +107,24 @@ async def artifact_metadata(artifact: str, request: Request) -> JSONResponse:
     elif mode == "delay":
         await asyncio.sleep(float(_mode.get("delay", 3.0)))
 
-    path = _resolve(artifact)
-    if path is None:
-        return JSONResponse(
-            status_code=404,
-            content={"error": "artifact_not_found", "artifact": artifact},
-        )
+    if version is not None and version.strip():
+        path = _resolve_versioned(artifact, version.strip())
+        if path is None:
+            return JSONResponse(
+                status_code=404,
+                content={
+                    "error": "artifact_version_not_found",
+                    "artifact": artifact,
+                    "version": version,
+                },
+            )
+    else:
+        path = _resolve(artifact)
+        if path is None:
+            return JSONResponse(
+                status_code=404,
+                content={"error": "artifact_not_found", "artifact": artifact},
+            )
     try:
         data = json.loads(path.read_text())
     except (OSError, ValueError) as exc:
@@ -95,7 +135,7 @@ async def artifact_metadata(artifact: str, request: Request) -> JSONResponse:
         data.setdefault("artifact", artifact)
         data["source_file"] = path.name
         data["source_mtime"] = int(path.stat().st_mtime)
-    return JSONResponse(content={"artifact": artifact, "metadata": data})
+    return JSONResponse(content={"artifact": artifact, "version": version, "metadata": data})
 
 
 @app.get("/control/mode")

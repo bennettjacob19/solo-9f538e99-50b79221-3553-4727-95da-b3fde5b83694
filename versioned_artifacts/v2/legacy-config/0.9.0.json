@@ -1,0 +1,17 @@
+{
+  "dependencies": [
+    {
+      "allowed_versions": [
+        "1.0.0"
+      ],
+      "name": "plugin-a"
+    }
+  ],
+  "group": "com.example",
+  "license": "EPL-2.0",
+  "name": "legacy-config",
+  "packaging": "jar",
+  "sha256": "a2338f37f7a5b6df536f67e03974295b8f7e71ea148df3fc7bbc159fef88501c",
+  "size_bytes": 42000,
+  "version": "0.9.0"
+}
